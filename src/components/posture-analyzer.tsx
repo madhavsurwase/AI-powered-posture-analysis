@@ -219,14 +219,14 @@ export function PostureAnalyzer() {
                     <div className="bg-muted rounded-lg flex items-center justify-center aspect-video overflow-hidden">
                         <video ref={videoRef} src={videoSrc ?? undefined} controls={!!videoSrc && !isUsingWebcam} playsInline muted={isUsingWebcam} className="w-full h-full object-contain rounded-lg" data-ai-hint="posture video" />
                         {!videoSrc && !isUsingWebcam && (
-                            <div className="text-muted-foreground flex flex-col items-center text-center p-4">
+                            <div className="text-muted-foreground flex flex-col items-center justify-center text-center p-4 h-full">
                                 <Video className="w-16 h-16 mb-2" />
                                 <p>Your video will appear here.</p>
                                 <p className="text-xs">Upload or use webcam to start.</p>
                             </div>
                         )}
                         {isUsingWebcam && !webcamReady && (
-                             <div className="text-muted-foreground flex flex-col items-center text-center p-4">
+                             <div className="text-muted-foreground flex flex-col items-center justify-center text-center p-4 h-full">
                                 <Loader2 className="w-16 h-16 mb-2 animate-spin" />
                                 <p>Starting webcam...</p>
                             </div>
