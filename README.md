@@ -32,6 +32,11 @@ This project is a full-stack web application that detects and evaluates human po
 
 ---
 
+🌐 Live Demo
+Deployed App (Vercel):
+https://ai-powered-posture-analysis-wmj9-3jp3j7zod.vercel.app
+
+---
 
 ## 🛠️ Setup & Installation
 
