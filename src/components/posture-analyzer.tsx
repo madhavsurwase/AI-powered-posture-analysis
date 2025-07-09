@@ -1,166 +1,127 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, CheckCircle2, CloudUpload, Dumbbell, Loader2, Video, XCircle, Ban } from "lucide-react";
+import { Camera, CheckCircle2, Dumbbell, Loader2, XCircle, Ban } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { handleAnalyzePosture } from "@/app/actions";
 import type { AnalyzePostureOutput } from "@/ai/flows/analyze-posture";
 import { useToast } from "@/hooks/use-toast";
 
-const blobToDataUrl = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-};
-
 export function PostureAnalyzer() {
     const [postureType, setPostureType] = useState<'squat' | 'desk_sitting'>('squat');
-    const [videoSrc, setVideoSrc] = useState<string | null>(null);
-    const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
-    const [isRecording, setIsRecording] = useState(false);
-    const [isUsingWebcam, setIsUsingWebcam] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<AnalyzePostureOutput | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [webcamReady, setWebcamReady] = useState(false);
+    const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const recordedChunksRef = useRef<Blob[]>([]);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const analysisIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const { toast } = useToast();
-
-    const cleanupWebcam = useCallback(() => {
-        if (videoRef.current?.srcObject) {
-            (videoRef.current.srcObject as MediaStream).getTracks().forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-        }
-        setIsUsingWebcam(false);
-        setWebcamReady(false);
-    }, []);
-
-    const resetState = useCallback(() => {
-        setVideoSrc(null);
-        setVideoBlob(null);
-        setAnalysisResult(null);
-        setError(null);
-        if(isUsingWebcam) {
-            cleanupWebcam();
-        }
-    }, [isUsingWebcam, cleanupWebcam]);
-
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
-            resetState();
-            setVideoBlob(file);
-            const url = URL.createObjectURL(file);
-            setVideoSrc(url);
-        }
-    };
     
-    const handleUseWebcam = useCallback(async () => {
-        resetState();
-        setIsUsingWebcam(true);
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                videoRef.current.play();
-                setWebcamReady(true);
-            }
-        } catch (err) {
-            console.error("Error accessing webcam:", err);
-            setError("Could not access webcam. Please check permissions and try again.");
-            setIsUsingWebcam(false);
-        }
-    }, [resetState]);
-
-    const handleStartRecording = useCallback(() => {
-        if (videoRef.current?.srcObject) {
-            setAnalysisResult(null);
-            setError(null);
-            const stream = videoRef.current.srcObject as MediaStream;
-            mediaRecorderRef.current = new MediaRecorder(stream);
-            recordedChunksRef.current = [];
-
-            mediaRecorderRef.current.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    recordedChunksRef.current.push(event.data);
-                }
-            };
-
-            mediaRecorderRef.current.onstop = () => {
-                const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-                setVideoBlob(blob);
-                const url = URL.createObjectURL(blob);
-                setVideoSrc(url);
-                cleanupWebcam();
-            };
-
-            mediaRecorderRef.current.start();
-            setIsRecording(true);
-        }
-    }, [cleanupWebcam]);
-
-    const handleStopRecording = useCallback(() => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
-        }
-    }, [isRecording]);
-
-    const handleAnalyze = useCallback(async () => {
-        if (!videoBlob) {
-            setError("Please upload or record a video first.");
+    // Function to capture a frame and send for analysis
+    const captureFrameAndAnalyze = useCallback(async () => {
+        if (!videoRef.current || !canvasRef.current || document.hidden || !videoRef.current.srcObject) {
             return;
         }
 
+        // Prevent new analysis if one is already in progress
+        if (isAnalyzing) return;
+
         setIsAnalyzing(true);
-        setError(null);
-        setAnalysisResult(null);
+        setError(null); // Clear previous errors
 
-        try {
-            const videoDataUri = await blobToDataUrl(videoBlob);
-            const result = await handleAnalyzePosture({ videoDataUri, postureType });
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        
+        if (context) {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageDataUri = canvas.toDataURL('image/jpeg');
 
-            if ('error' in result && result.error) {
-                setError(result.error);
-                toast({
-                    title: "Analysis Failed",
-                    description: result.error,
-                    variant: "destructive",
-                });
-            } else {
-                setAnalysisResult(result as AnalyzePostureOutput);
+            try {
+                const result = await handleAnalyzePosture({ imageDataUri, postureType });
+
+                if ('error' in result && result.error) {
+                    setError(result.error);
+                    setAnalysisResult(null);
+                } else {
+                    setAnalysisResult(result as AnalyzePostureOutput);
+                    setError(null);
+                }
+            } catch (e) {
+                const errorMessage = e instanceof Error ? e.message : "An unexpected error occurred.";
+                setError(errorMessage);
+                setAnalysisResult(null);
             }
-        } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : "An unexpected error occurred.";
-            setError(errorMessage);
-            toast({
-                title: "Analysis Failed",
-                description: errorMessage,
-                variant: "destructive",
-            });
-        } finally {
-            setIsAnalyzing(false);
         }
-    }, [videoBlob, postureType, toast]);
-    
-    useEffect(() => {
-        return () => {
-            cleanupWebcam();
-            if (videoSrc) URL.revokeObjectURL(videoSrc);
-        };
-    }, [cleanupWebcam, videoSrc]);
+        setIsAnalyzing(false);
+    }, [isAnalyzing, postureType]);
 
+
+    // Effect to get camera permission and set up stream
+    useEffect(() => {
+        const getCameraPermission = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                setHasCameraPermission(true);
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                }
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                setHasCameraPermission(false);
+                toast({
+                    variant: 'destructive',
+                    title: 'Camera Access Denied',
+                    description: 'Please enable camera permissions in your browser settings to use this app.',
+                });
+            }
+        };
+        getCameraPermission();
+        
+        return () => {
+            if (videoRef.current?.srcObject) {
+                (videoRef.current.srcObject as MediaStream).getTracks().forEach(track => track.stop());
+            }
+            if (analysisIntervalRef.current) {
+                clearInterval(analysisIntervalRef.current);
+            }
+        };
+    }, [toast]);
+    
+    // Effect to start/stop the analysis interval
+    useEffect(() => {
+        // Clear existing interval
+        if (analysisIntervalRef.current) {
+            clearInterval(analysisIntervalRef.current);
+        }
+
+        // Start new interval if we have permission
+        if (hasCameraPermission) {
+            // Immediately analyze, then set interval
+            captureFrameAndAnalyze();
+            analysisIntervalRef.current = setInterval(captureFrameAndAnalyze, 5000); // Analyze every 5 seconds
+        }
+
+        // Cleanup on unmount or when dependencies change
+        return () => {
+            if (analysisIntervalRef.current) {
+                clearInterval(analysisIntervalRef.current);
+            }
+        };
+    }, [hasCameraPermission, postureType, captureFrameAndAnalyze]);
+
+    const handlePostureTypeChange = (value: 'squat' | 'desk_sitting') => {
+        setPostureType(value);
+        setAnalysisResult(null); // Reset analysis when type changes
+        setError(null);
+    };
 
     return (
         <div className="w-full max-w-4xl mx-auto">
@@ -169,79 +130,62 @@ export function PostureAnalyzer() {
                     <Dumbbell className="w-10 h-10" />
                     PosturePro
                 </h1>
-                <p className="text-muted-foreground mt-2">AI-powered posture analysis to perfect your form.</p>
+                <p className="text-muted-foreground mt-2">Real-time AI posture analysis to perfect your form.</p>
             </header>
 
             <Card className="overflow-hidden shadow-lg">
                 <CardHeader>
-                    <CardTitle>Check Your Posture</CardTitle>
-                    <CardDescription>Select an activity, provide a short video, and get instant feedback.</CardDescription>
+                    <CardTitle>Live Posture Check</CardTitle>
+                    <CardDescription>Select an activity and get instant, real-time feedback on your posture.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid md:grid-cols-2 gap-6">
                     <div className="flex flex-col gap-4">
                         <div>
                             <label className="text-sm font-medium">Activity</label>
-                            <Tabs value={postureType} onValueChange={(v) => {
-                                resetState();
-                                setPostureType(v as any);
-                            }} className="w-full mt-1">
+                            <Tabs value={postureType} onValueChange={(v) => handlePostureTypeChange(v as any)} className="w-full mt-1">
                                 <TabsList className="grid w-full grid-cols-2">
                                     <TabsTrigger value="squat">Squat</TabsTrigger>
                                     <TabsTrigger value="desk_sitting">Desk Sitting</TabsTrigger>
                                 </TabsList>
                             </Tabs>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <Button onClick={() => fileInputRef.current?.click()} disabled={isUsingWebcam}>
-                                <CloudUpload className="mr-2 h-4 w-4" /> Upload Video
-                            </Button>
-                            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="video/mp4,video/webm" />
-
-                            <Button onClick={handleUseWebcam} variant="outline" disabled={isRecording}>
-                                <Camera className="mr-2 h-4 w-4" /> Use Webcam
-                            </Button>
-                        </div>
-                        
-                        {isUsingWebcam && (
-                            <div className="grid grid-cols-2 gap-2">
-                                <Button onClick={handleStartRecording} disabled={!webcamReady || isRecording}>Start Recording</Button>
-                                <Button onClick={handleStopRecording} disabled={!isRecording} variant="destructive">Stop Recording</Button>
-                            </div>
-                        )}
-                        
-                        <Button onClick={handleAnalyze} disabled={!videoBlob || isAnalyzing || isRecording}>
-                            {isAnalyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Video className="mr-2 h-4 w-4" />}
-                            Analyze Posture
-                        </Button>
+                        <Alert>
+                           <Camera className="h-4 w-4"/>
+                           <AlertTitle>How it works</AlertTitle>
+                           <AlertDescription>
+                             Your camera feed is analyzed in real-time. We capture a frame every few seconds to provide feedback. Only images are sent for analysis.
+                           </AlertDescription>
+                        </Alert>
                     </div>
 
                     <div className="relative bg-muted rounded-lg flex items-center justify-center aspect-video overflow-hidden">
-                        <video ref={videoRef} src={videoSrc ?? undefined} controls={!!videoSrc && !isUsingWebcam} playsInline muted={isUsingWebcam} className="w-full h-full object-contain rounded-lg" data-ai-hint="posture video" />
-                        {!videoSrc && !isUsingWebcam && (
-                            <div className="absolute inset-0 text-muted-foreground flex flex-col items-center justify-center text-center p-4">
-                                <Video className="w-16 h-16 mb-2" />
-                                <p>Your video will appear here.</p>
-                                <p className="text-xs">Upload or use webcam to start.</p>
+                        <video ref={videoRef} playsInline muted autoPlay className="w-full h-full object-contain rounded-lg" data-ai-hint="person posture" />
+                        <canvas ref={canvasRef} className="hidden" />
+                        
+                        {hasCameraPermission === false && (
+                            <div className="absolute inset-0 text-destructive-foreground bg-destructive/90 flex flex-col items-center justify-center text-center p-4">
+                                <Ban className="w-16 h-16 mb-2" />
+                                <p className="font-bold">Camera Access Denied</p>
+                                <p className="text-xs">Please enable camera permissions to start.</p>
                             </div>
                         )}
-                        {isUsingWebcam && !webcamReady && (
+                        {hasCameraPermission === null && (
                              <div className="absolute inset-0 text-muted-foreground flex flex-col items-center justify-center text-center p-4">
                                 <Loader2 className="w-16 h-16 mb-2 animate-spin" />
                                 <p>Starting webcam...</p>
                             </div>
                         )}
-                    </div>
-                </CardContent>
-                {(isAnalyzing || error || analysisResult) && (
-                    <CardFooter className="flex flex-col">
-                        {isAnalyzing && (
-                            <div className="flex items-center text-primary w-full p-4 rounded-lg bg-primary/10">
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Analyzing your posture, please wait...
+                         {isAnalyzing && (
+                            <div className="absolute top-2 right-2 flex items-center gap-2 bg-primary/80 text-primary-foreground text-xs font-bold py-1 px-2 rounded-full">
+                                <Loader2 className="h-3 w-3 animate-spin"/>
+                                Analyzing...
                             </div>
                         )}
-                        {error && (
+                    </div>
+                </CardContent>
+                {(error || analysisResult) && (
+                    <CardFooter className="flex flex-col">
+                        {error && !isAnalyzing && (
                             <Alert variant="destructive" className="w-full">
                                 <Ban className="h-4 w-4" />
                                 <AlertTitle>Analysis Error</AlertTitle>
@@ -251,7 +195,7 @@ export function PostureAnalyzer() {
                         {analysisResult && (
                             <Alert
                                 variant={analysisResult.postureAnalysis.isCorrect ? "default" : "destructive"}
-                                className={`w-full ${analysisResult.postureAnalysis.isCorrect ? "border-green-600 text-green-900 dark:border-green-500 dark:text-green-200 [&>svg]:text-green-600" : ""}`}
+                                className={`w-full transition-all duration-300 ${analysisResult.postureAnalysis.isCorrect ? "border-green-600 text-green-900 dark:border-green-500 dark:text-green-200 [&>svg]:text-green-600" : ""}`}
                             >
                                {analysisResult.postureAnalysis.isCorrect ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                                 <AlertTitle className="font-bold">

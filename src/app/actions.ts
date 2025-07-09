@@ -8,7 +8,7 @@ type ActionResult = AnalyzePostureOutput | { error: string };
 export async function handleAnalyzePosture(input: AnalyzePostureInput): Promise<ActionResult> {
     try {
         const validatedInput = z.object({
-            videoDataUri: z.string().startsWith('data:video/'),
+            imageDataUri: z.string().startsWith('data:image/'),
             postureType: z.enum(['squat', 'desk_sitting']),
         }).parse(input);
 

@@ -1,7 +1,7 @@
 // src/ai/flows/analyze-posture.ts
 'use server';
 /**
- * @fileOverview Analyzes posture from a video feed using AI and provides real-time feedback.
+ * @fileOverview Analyzes posture from an image using AI and provides real-time feedback.
  *
  * - analyzePosture - A function that handles the posture analysis process.
  * - AnalyzePostureInput - The input type for the analyzePosture function.
@@ -12,10 +12,10 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const AnalyzePostureInputSchema = z.object({
-  videoDataUri: z
+  imageDataUri: z
     .string()
     .describe(
-      "A video of a person performing squats or sitting at a desk, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+      "An image of a person performing squats or sitting at a desk, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
   postureType: z.enum(['squat', 'desk_sitting']).describe('The type of posture to analyze.'),
 });
@@ -37,13 +37,13 @@ const prompt = ai.definePrompt({
   name: 'analyzePosturePrompt',
   input: {schema: AnalyzePostureInputSchema},
   output: {schema: AnalyzePostureOutputSchema},
-  prompt: `You are an AI posture analysis expert. You will analyze the posture of a person in a video and provide feedback on their form.
+  prompt: `You are an AI posture analysis expert. You will analyze the posture of a person in an image (a single frame from a video) and provide feedback on their form.
 
-The video data is provided as a data URI. The type of posture to analyze is {{{postureType}}}.
+The image data is provided as a data URI. The type of posture to analyze is {{{postureType}}}.
 
-Analyze the video and determine if the posture is correct. If not, provide specific feedback on how to correct it.
+Analyze the image and determine if the posture is correct. If not, provide specific feedback on how to correct it.
 
-Video: {{media url=videoDataUri}}
+Image: {{media url=imageDataUri}}
 
 Output the analysis in the following JSON format:
 {
