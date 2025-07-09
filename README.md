@@ -6,7 +6,8 @@ This project is a full-stack web application that detects and evaluates human po
 
 ## 📸 Demo Screenshots
 
-![Screenshot 2025-07-08 190400](https://github.com/user-attachments/assets/9ef2d1ec-3739-4b34-af92-8f6d8e50d898)
+![image](https://github.com/user-attachments/assets/93e03550-14c2-485c-8b41-edb1690afc78)
+
 
 
 ---
@@ -34,7 +35,7 @@ This project is a full-stack web application that detects and evaluates human po
 
 🌐 Live Demo
 Deployed App (Vercel):
-https://ai-powered-posture-analysis-wmj9-3jp3j7zod.vercel.app
+(https://ai-powered-posture-analysis-wmj9-805w0l1y8.vercel.app/)
 
 ---
 
